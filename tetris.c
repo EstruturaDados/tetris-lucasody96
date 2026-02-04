@@ -3,13 +3,13 @@
 #include <time.h>
 #include <locale.h>
 
-// --- Configurações do Jogo ---
-#define TAM_FILA 5    // A fila de próximas peças é fixa em 5
-#define TAM_PILHA 3   // A reserva aguenta até 3 peças
+// --- Constantes de Configuração ---
+#define TAM_FILA 5    // Capacidade da Fila Circular
+#define TAM_PILHA 3   // Capacidade da Pilha de Reserva
 
 // --- Estruturas de Dados ---
 
-// Representação de uma Peça
+// Representação da Peça
 typedef struct {
     char nome;  // Tipo: 'I', 'O', 'T', 'L', etc.
     int id;     // Identificador único
@@ -18,90 +18,89 @@ typedef struct {
 // Estrutura de Fila Circular
 typedef struct {
     Peca itens[TAM_FILA];
-    int inicio;
-    int fim;
-    int qtd;
+    int inicio; // Índice da frente
+    int fim;    // Índice de inserção
+    int qtd;    // Quantidade atual
 } FilaCircular;
 
-// Estrutura de Pilha (LIFO - Last In, First Out)
+// Estrutura de Pilha (LIFO)
 typedef struct {
     Peca itens[TAM_PILHA];
-    int topo; // Índice do elemento no topo (-1 se vazia)
+    int topo;   // Índice do topo (-1 se vazia)
 } Pilha;
+
+// --- Variável Global para IDs ---
+int idGlobal = 0;
 
 // --- Protótipos das Funções ---
 void inicializarFila(FilaCircular *f);
 void inicializarPilha(Pilha *p);
-Peca gerarPeca(int *idGlobal);
+Peca gerarPeca();
 
-// Operações de Fila (Auxiliares)
-void enqueue(FilaCircular *f, Peca p); // Inserir
-Peca dequeue(FilaCircular *f);         // Remover
+// Primitivas de Estrutura
+void enqueue(FilaCircular *f, Peca p);
+Peca dequeue(FilaCircular *f);
+int push(Pilha *p, Peca item);
+int pop(Pilha *p, Peca *itemRetorno);
 
-// Operações de Pilha (Auxiliares)
-int push(Pilha *p, Peca item);         // Empilhar
-int pop(Pilha *p, Peca *itemRetorno);  // Desempilhar
+// Ações do Jogo (Requisitos Funcionais)
+void acaoJogar(FilaCircular *f);
+void acaoReservar(FilaCircular *f, Pilha *p);
+void acaoUsarReserva(Pilha *p);
+void acaoTrocarUm(FilaCircular *f, Pilha *p);
+void acaoTrocarBloco(FilaCircular *f, Pilha *p);
 
-// Ações do Jogo
-void jogarPeca(FilaCircular *f, int *idGlobal);
-void reservarPeca(FilaCircular *f, Pilha *p, int *idGlobal);
-void usarPecaReserva(Pilha *p);
+// Visualização
 void exibirEstado(FilaCircular *f, Pilha *p);
+void limparBuffer();
 
 // ============================================================================
 // FUNÇÃO PRINCIPAL
 // ============================================================================
 int main() {
     setlocale(LC_ALL, "Portuguese");
-    srand(time(NULL)); // Semente para números aleatórios
+    srand(time(NULL)); 
 
     FilaCircular fila;
     Pilha pilha;
-    int idGlobal = 0; // Contador único para as peças
     int opcao;
 
     // 1. Inicialização
     inicializarFila(&fila);
     inicializarPilha(&pilha);
 
-    // 2. Pré-aquecimento: Encher a fila inicial
-    printf("Gerando peças iniciais...\n");
+    // 2. Pré-carregamento da fila (Mantendo-a cheia inicialmente)
     for(int i = 0; i < TAM_FILA; i++) {
-        enqueue(&fila, gerarPeca(&idGlobal));
+        enqueue(&fila, gerarPeca());
     }
 
     // 3. Loop do Jogo
     do {
         exibirEstado(&fila, &pilha);
 
-        printf("\nOpções de Ação:\n");
-        printf("1 - Jogar peça (Fila -> Jogo)\n");
-        printf("2 - Reservar peça (Fila -> Pilha)\n");
-        printf("3 - Usar peça reservada (Pilha -> Jogo)\n");
+        printf("\nOpções disponíveis:\n");
+        printf("1 - Jogar peça da frente da fila\n");
+        printf("2 - Enviar peça da fila para a pilha de reserva\n");
+        printf("3 - Usar peça da pilha de reserva\n");
+        printf("4 - Trocar peça da frente da fila com o topo da pilha\n");
+        printf("5 - Trocar os 3 primeiros da fila com as 3 peças da pilha\n");
         printf("0 - Sair\n");
-        printf("Opção: ");
+        printf("Opção escolhida: ");
         scanf("%d", &opcao);
+        limparBuffer();
 
-        // Limpeza de buffer (para evitar bugs de 'enter')
-        while(getchar() != '\n'); 
         printf("\n--------------------------------------------------\n");
 
         switch(opcao) {
-            case 1:
-                jogarPeca(&fila, &idGlobal);
-                break;
-            case 2:
-                reservarPeca(&fila, &pilha, &idGlobal);
-                break;
-            case 3:
-                usarPecaReserva(&pilha);
-                break;
-            case 0:
-                printf("Encerrando Tetris Stack...\n");
-                break;
-            default:
-                printf("[!] Opção inválida.\n");
+            case 1: acaoJogar(&fila); break;
+            case 2: acaoReservar(&fila, &pilha); break;
+            case 3: acaoUsarReserva(&pilha); break;
+            case 4: acaoTrocarUm(&fila, &pilha); break;
+            case 5: acaoTrocarBloco(&fila, &pilha); break;
+            case 0: printf("Encerrando o sistema...\n"); break;
+            default: printf("[!] Opção inválida.\n");
         }
+        printf("--------------------------------------------------\n");
 
     } while(opcao != 0);
 
@@ -112,130 +111,158 @@ int main() {
 // IMPLEMENTAÇÃO DAS FUNÇÕES
 // ============================================================================
 
-// --- Gerador de Peças ---
-Peca gerarPeca(int *idGlobal) {
+// --- Gerador ---
+Peca gerarPeca() {
     Peca p;
     char tipos[] = {'I', 'O', 'T', 'L', 'Z', 'S', 'J'};
     p.nome = tipos[rand() % 7];
-    p.id = *idGlobal;
-    (*idGlobal)++; // Incrementa o ID para a próxima chamada
+    p.id = idGlobal++;
     return p;
 }
 
-// --- Funções de Inicialização ---
+// --- Inicialização ---
 void inicializarFila(FilaCircular *f) {
     f->inicio = 0;
     f->fim = 0;
     f->qtd = 0;
 }
-
 void inicializarPilha(Pilha *p) {
-    p->topo = -1; // -1 indica pilha vazia
+    p->topo = -1;
 }
 
-// --- Primitivas da Fila Circular ---
+// --- Primitivas Fila/Pilha ---
 void enqueue(FilaCircular *f, Peca p) {
-    // Nota: Neste jogo, como removemos e inserimos imediatamente,
-    // a fila nunca deve estourar o limite se a lógica estiver certa.
     if (f->qtd < TAM_FILA) {
         f->itens[f->fim] = p;
-        f->fim = (f->fim + 1) % TAM_FILA; // Aritmética modular (Circular)
+        f->fim = (f->fim + 1) % TAM_FILA; // Lógica circular
         f->qtd++;
     }
 }
 
 Peca dequeue(FilaCircular *f) {
     Peca p = f->itens[f->inicio];
-    f->inicio = (f->inicio + 1) % TAM_FILA; // Move o início circularmente
+    f->inicio = (f->inicio + 1) % TAM_FILA; // Lógica circular
     f->qtd--;
     return p;
 }
 
-// --- Primitivas da Pilha ---
 int push(Pilha *p, Peca item) {
-    if (p->topo >= TAM_PILHA - 1) {
-        return 0; // Erro: Pilha cheia (Stack Overflow)
-    }
+    if (p->topo >= TAM_PILHA - 1) return 0; // Full
     p->topo++;
     p->itens[p->topo] = item;
-    return 1; // Sucesso
+    return 1;
 }
 
 int pop(Pilha *p, Peca *itemRetorno) {
-    if (p->topo == -1) {
-        return 0; // Erro: Pilha vazia (Stack Underflow)
-    }
+    if (p->topo == -1) return 0; // Empty
     *itemRetorno = p->itens[p->topo];
     p->topo--;
-    return 1; // Sucesso
+    return 1;
 }
 
-// --- Lógica do Jogo ---
+// --- AÇÕES DO JOGO ---
 
-// Ação 1: Jogar
-// Remove da frente da fila e IMEDIATAMENTE repõe uma nova no final
-void jogarPeca(FilaCircular *f, int *idGlobal) {
-    Peca jogada = dequeue(f);
-    printf("[AÇÃO] Peça '%c' (ID %d) foi jogada no campo!\n", jogada.nome, jogada.id);
-    
-    // Regra: Manter fila sempre cheia
-    Peca nova = gerarPeca(idGlobal);
-    enqueue(f, nova);
-    printf("[AUTO] Nova peça '%c' entrou na fila.\n", nova.nome);
+// 1. Jogar: Remove da fila e repõe no final
+void acaoJogar(FilaCircular *f) {
+    Peca p = dequeue(f);
+    printf(">> Peça JOGADA: [%c %d]\n", p.nome, p.id);
+    enqueue(f, gerarPeca()); // Reposição automática
 }
 
-// Ação 2: Reservar
-// Tira da fila, tenta colocar na pilha. Se der certo, repõe a fila.
-void reservarPeca(FilaCircular *f, Pilha *p, int *idGlobal) {
-    // Verifica se a pilha cabe mais alguém antes de tirar da fila
+// 2. Reservar: Tira da fila, põe na pilha, repõe fila
+void acaoReservar(FilaCircular *f, Pilha *p) {
     if (p->topo >= TAM_PILHA - 1) {
-        printf("[ERRO] Reserva cheia! Jogue ou use uma peça reservada.\n");
+        printf("[!] A reserva está cheia! Não é possível reservar.\n");
+        return;
+    }
+    Peca pFila = dequeue(f);
+    push(p, pFila);
+    printf(">> Peça RESERVADA: [%c %d]\n", pFila.nome, pFila.id);
+    enqueue(f, gerarPeca()); // Reposição automática
+}
+
+// 3. Usar Reserva: Remove do topo da pilha (não afeta fila)
+void acaoUsarReserva(Pilha *p) {
+    Peca pPilha;
+    if (pop(p, &pPilha)) {
+        printf(">> Usando peça da RESERVA: [%c %d]\n", pPilha.nome, pPilha.id);
+    } else {
+        printf("[!] Reserva vazia.\n");
+    }
+}
+
+// 4. Troca Simples: Frente da Fila <-> Topo da Pilha
+void acaoTrocarUm(FilaCircular *f, Pilha *p) {
+    if (p->topo == -1) {
+        printf("[!] Impossível trocar: Reserva vazia.\n");
+        return;
+    }
+    
+    // Acesso direto aos ponteiros para troca (Swap)
+    // Na fila circular, o índice real é 'inicio'
+    // Na pilha, o índice real é 'topo'
+    Peca temp = f->itens[f->inicio];
+    f->itens[f->inicio] = p->itens[p->topo];
+    p->itens[p->topo] = temp;
+    
+    printf(">> Troca efetuada: [%c %d] <-> [%c %d]\n", 
+           p->itens[p->topo].nome, p->itens[p->topo].id, // Antigo da fila, agora na pilha
+           f->itens[f->inicio].nome, f->itens[f->inicio].id); // Antigo da pilha, agora na fila
+}
+
+// 5. Troca Múltipla (Avançado)
+// Troca os 3 primeiros da fila com os 3 da pilha
+void acaoTrocarBloco(FilaCircular *f, Pilha *p) {
+    // Validação: Pilha precisa ter 3 itens. Fila sempre tem 5, então ok.
+    if (p->topo < 2) { // Índices 0, 1, 2 devem existir
+        printf("[!] Ação negada: A pilha precisa ter 3 peças para a troca múltipla.\n");
         return;
     }
 
-    Peca aReservar = dequeue(f);
-    push(p, aReservar);
-    printf("[AÇÃO] Peça '%c' (ID %d) movida para a RESERVA.\n", aReservar.nome, aReservar.id);
+    printf(">> Realizando TROCA MÚLTIPLA (3 peças)...\n");
 
-    // Regra: Manter fila sempre cheia
-    Peca nova = gerarPeca(idGlobal);
-    enqueue(f, nova);
-    printf("[AUTO] Nova peça '%c' entrou na fila para compensar.\n", nova.nome);
-}
+    // Loop para trocar 3 itens
+    // i=0: Topo da pilha <-> Início da Fila
+    // i=1: Meio da pilha <-> Início+1 da Fila
+    // i=2: Base da pilha <-> Início+2 da Fila
+    for (int i = 0; i < 3; i++) {
+        // Cálculo do índice na fila circular
+        int idxFila = (f->inicio + i) % TAM_FILA;
+        // Cálculo do índice na pilha (Topo descendo)
+        int idxPilha = p->topo - i;
 
-// Ação 3: Usar Reserva
-// Apenas remove do topo da pilha e joga. Não afeta a fila.
-void usarPecaReserva(Pilha *p) {
-    Peca usada;
-    if (pop(p, &usada)) {
-        printf("[AÇÃO] Usando peça RESERVADA '%c' (ID %d)!\n", usada.nome, usada.id);
-    } else {
-        printf("[ERRO] Não há peças na reserva.\n");
+        // Swap
+        Peca temp = f->itens[idxFila];
+        f->itens[idxFila] = p->itens[idxPilha];
+        p->itens[idxPilha] = temp;
     }
+    printf(">> Troca em bloco realizada com sucesso!\n");
 }
 
-// Exibição Visual
+// --- Visualização ---
 void exibirEstado(FilaCircular *f, Pilha *p) {
     printf("\nEstado atual:\n");
     
-    // 1. Mostrar Fila
+    // Fila
     printf("Fila de peças: ");
-    for (int i = 0; i < f->qtd; i++) {
-        // Cálculo do índice real na fila circular
+    for(int i = 0; i < f->qtd; i++) {
         int idx = (f->inicio + i) % TAM_FILA;
         printf("[%c %d] ", f->itens[idx].nome, f->itens[idx].id);
     }
     printf("\n");
 
-    // 2. Mostrar Pilha
-    // Mostra do Topo para a Base (LIFO visual)
+    // Pilha
     printf("Pilha de reserva (Topo -> Base): ");
-    if (p->topo == -1) {
-        printf("[ VAZIA ]");
-    } else {
-        for (int i = p->topo; i >= 0; i--) {
+    if (p->topo == -1) printf("[ VAZIA ]");
+    else {
+        for(int i = p->topo; i >= 0; i--) {
             printf("[%c %d] ", p->itens[i].nome, p->itens[i].id);
         }
     }
     printf("\n");
+}
+
+void limparBuffer() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
 }
